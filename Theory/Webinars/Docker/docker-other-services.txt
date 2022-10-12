@@ -1,0 +1,132 @@
+Добавление других сервисов
+ничем особым не отличается:
+- указываем образ или Dockerfile
+- выясняем в документации, какие переменные окружения нужны
+- подключаем конфиги через volume
+- запускаем
+
+Попробуем добавить postgres и как из php подключиться к БД
+Хотим, чтобы данные не пропадали посе рестарта контейнера
+volumes нужны и для того, чтобы обеспечить сохранность данных
+для этого в docker-compose есть отдельная секция volumes
+
+даем имя тома, том это хранлилище данных, т.е. папочка, которая замапится внутрь
+
+- pgdata:/var/lib/postgresql/data
+это означает, что при старте контейнера на папку /var/lib/postgresql/data
+(мы знаем, что здесь /var/lib/postgresql/data у postgres данные хранятся)
+будет расшарен том pgdata (имя тома, не знаю где лежит и знать сейчас не хочу)
+и при рестарте этого всего эти данные не потеряются
+порт у постгреса 5432
+
+в файлe docker-compose.yaml очень важны пробелы, их количество
+текст docker-compose.yaml
+
+version: '3'
+
+services:
+ php:
+  build: ./.docker/php
+  ports:
+   - "8080:8080"
+  volumes:
+   - ./:/app
+  working_dir: /app
+  command: "php -S 0.0.0.0:8080"
+
+ postgres:
+  image: postgres:14
+  ports:
+   - "5432:5432"
+  volumes:
+   - pgdata:/var/lib/postgresql/data
+
+volumes:
+ pgdata:
+
+запустим из корня проекта docker-compose up --build -d
+docker ps
+не видим где postgres
+docker ps -a
+берем из списка id контейнера, который был запущен только что но уже не работает и в docker ps не виден
+docker logs ID_контейнера
+видим сообщение об ошибке, длинное, начинается с
+Error: Database is uninitialized and superuser password is not specified
+
+добавим environment
+  environment:
+   POSTGRES_USER: profit
+   POSTGRES_PASSWORD: profit
+   POSTGRES_DB: profit
+где брать названия переменных? гуглим postgres docker hub, https://hub.docker.com/_/postgres
+раздел Environment Variables, здесь про каждую переменную окружения написано
+
+новая версия текста docker-compose.yaml
+
+version: '3'
+
+services:
+ php:
+  build: ./.docker/php
+  ports:
+   - "8080:8080"
+  volumes:
+   - ./:/app
+  working_dir: /app
+  command: "php -S 0.0.0.0:8080"
+
+ postgres:
+  image: postgres:14
+  ports:
+   - "5432:5432"
+  environment:
+   POSTGRES_USER: profit
+   POSTGRES_PASSWORD: profit
+   POSTGRES_DB: profit
+  volumes:
+   - pgdata:/var/lib/postgresql/data
+
+volumes:
+ pgdata:
+
+docker-compose up --build -d
+docker ps
+долго работает и запускает через пару минут два контейнера
+
+в PHPStorm справа вдоль экрана вкладка database, вводим параметры базы, localhost (потому что замапил порты)
+можем создавать в базе таблицы и т.п.
+таблица persons id serial, name varchar100, year int
+создастся запрос
+create table persons
+(
+	id serial not null
+		constraint persons_pk
+			primary key,
+	name varchar(100),
+	year int
+);
+
+добавим данные (сверху +, потом стрелка вверх рядом с + чтобы данные в базу отправить)
+остановим docker-compose down
+идет остановка всех двух наших сервисов
+в PHPStorm видим дисконнект с базой; docker ps показывает, что нет запущенных контейнеров
+
+запускаем
+docker-compose up --build -d
+пересборка не потребовалась у Альберта и у него быстро, у меня долго, 1-2 минуты
+контейнер перезапустили, данные на месте
+
+пишем приложение на php с подключением к бд
+$dbh = new PDO('pgsql:host=localhost;dbname=profit', 'profit', 'profit');
+var_dump($dbh);
+в браузере localhost:8080
+ошибка Fatal error: Uncaught PDOException: SQLSTATE[08006] [7] could not connect to server:
+почему? php выполняется где? в контейнере. контейнер у нас что? изолирован. он не может обратиться
+к бд по локальному порту.
+
+в docker-compose каждому сервису давали имя. а он создал сеть между нашими сервисами.
+как оркестратор контейнеров.
+и каждый контейнер в этой сети получил доменное имя по названию сервиса.
+
+$dbh = new PDO('pgsql:host=postgres;dbname=profit', 'profit', 'profit');
+var_dump($dbh); //object(PDO)#1 (0) { }
