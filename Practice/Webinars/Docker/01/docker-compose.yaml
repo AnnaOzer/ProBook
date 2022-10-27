@@ -7,6 +7,8 @@ services:
    - "8080:8080"
   volumes:
    - ./:/app
+  networks:
+   - internal_test_net
   working_dir: /app
   command: "php -S 0.0.0.0:8080"
 
@@ -23,3 +25,11 @@ services:
 
 volumes:
  pgdata:
+
+networks:
+ internal_test_net:
+  driver: bridge
+  ipam:
+   driver: default
+   config:
+    - subnet: 192.168.220.0/28

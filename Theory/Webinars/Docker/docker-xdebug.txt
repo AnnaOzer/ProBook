@@ -1,0 +1,93 @@
+XDebug
+настраиваем отладку в PHP
+как использовать XDebug, если мы всё заизолировали
+
+Пошаговый план настройки XDebug
+
+- устанавливаем расширение XDebug в Dockerfile через PECL
+(PECL- репозиторий для бинарных расшрений; говорят "в пекле")
+добавим строку
+RUN pecl channel-update pecl.php.net
+где pecl команда, channel-update получит от репозитория pecl пакетов их список,
+pecl.php.net репозиторий откуда получит
+пробуем docker-compose up --build -d, отработало
+
+мог бы дальше написать
+RUN pecl install xdebug
+но не буду, потому что каждая команда Dockerfile создает слой в образе
+поэтому в одну строку
+RUN pecl channel-update pecl.php.net && pecl install xdebug
+и еще команда docker-php-ext-enable xdebug
+или если надо однострочную команду написать на несколько строк то через обратный слеш \
+RUN pecl channel-update pecl.php.net && \
+    pecl install xdebug && \
+    docker-php-ext-enable xdebug
+пробуем docker-compose up --build -d, отработало
+
+
+- добавляем xdebug.ini
+- делим docker-compose.yaml на два файла - базовый и dev (это не обязательно)
+- прокидываем в контейнер xdebug.ini
+- устанавливаем переменные XDEBUG_CONFIG и PHP_IDE_CONFIG
+- добавляем сеть в docker-compose.yaml
+- в IDE
+    - указываем, что работаем с php в контейнере (сервисе)
+    - убеждаемся, что видим XDebug
+    - устанавливаем имя сервера и path mapping
+    - пробуем
+
+
+
+для xdebug нужна сеть.
+чтобы xdebug мог достучаться из контейнера до шторма.
+сетевое соединение идет от php к phpstorm, а не наоборот.
+создадим здесь в docker-compose свою сеть.
+
+networks:
+ internal_test_net:
+  driver: bridge
+  ipam:
+   driver: default
+   config:
+    - subnet: 192.168.220.0/28
+
+bridge это значит, что мы сейчас построим сетевой мост между внутренней сетью докера
+и нашим с вами компьютером.
+по сути у нас на компьютере появится еще одна сетевая карта, с неким ip,
+и эта же сетевая карта в режиме моста будет гонять туда-сюда пакеты во внутреннюю сеть докера.
+для того, чтобы ip появился, нужно указать параметр ipam (ip access manager расшифровывается).
+в подсети subnet будет выдано 2 ip адреса: один докеру, один нашему компьютеру,
+в режиме бриджа они между собой соединятся.
+
+имя этой сети надо указать в конфиге php в networks. в примере -  в строке после volumes.
+networks:
+ - internal_test_net
+то есть сеть она на весь оркестр контейнеров, а конкретный контейнер надо к ней подключать.
+
+еще раз билд чтобы сеть поднялась.
+docker-compose up --build -d
+
+я не хочу, чтобы postgres использовала полноценную bridge сеть. достаточно порт замапить.
+чем больше изоляции для postgres, тем лучше.
+
+выполняетс в командной строке из той же папки проекта
+ipconfig, ifconfig у Альберта нет.
+ipconfig  у меня есть, не показывает сеть с 192.168.220.0/28
+ifconfig у меня нет.
+у меня: sudo:command not found
+я нашла, что в windows есть еще команда gip
+Альберт ставит:
+sudo apt install net-tools
+
+В папке проект/.docker/php
+создается файл с настройками xdebug.ini, в нем
+xdebug.start_with_request=yes
+xdebug.mode=bebug
+xdebug.idekey="PHPSTORM"
+xdebug.client_host=192.168.220.1
+
+
+
+
+
+
